@@ -1,11 +1,12 @@
 import logging
 import time
 import os
-from typing import NoReturn
 import shutil
 import asyncio
+from typing import NoReturn
 
 import click
+import numpy as np
 
 
 async def async_copyfile(source_name: str, destination_name: str) -> NoReturn:
@@ -15,6 +16,15 @@ async def async_copyfile(source_name: str, destination_name: str) -> NoReturn:
     :param destination_name: Destination file for copying process
     """
     shutil.copyfile(source_name, destination_name)
+
+
+async def async_movefile(source_name: str, destination_name: str) -> NoReturn:
+    """
+    Some wrapper function for shutil.move with async statement
+    :param source_name: Source file for copying process
+    :param destination_name: Destination file for copying process
+    """
+    shutil.move(source_name, destination_name)
 
 
 def files_copy(source_directory: str, destination_directory: str) -> NoReturn:
@@ -39,6 +49,36 @@ def files_copy(source_directory: str, destination_directory: str) -> NoReturn:
         loop.run_until_complete(asyncio.wait(tasks_list))
 
 
+def train_val_test_split(train_dir: str, val_dir: str, test_dir: str,
+                         train_ratio: float, val_ratio: float, test_ratio: float) -> NoReturn:
+    """
+    Split dataset on 3 parts: train set, validation set and test set.
+    Validation and test sets move to its own directories asynchronous
+    :param train_dir:
+    :param val_dir:
+    :param test_dir:
+    :param train_ratio:
+    :param val_ratio:
+    :param test_ratio:
+    :return:
+    """
+    directory_structure = os.listdir(train_dir)
+    tasks_list = []
+    prob_array = np.random.uniform(size=len(directory_structure))
+    loop = asyncio.get_event_loop()
+    for file_name, prob in zip(directory_structure, prob_array):
+        if train_ratio < prob <= train_ratio + val_ratio:
+            source_file = train_dir + '/' + file_name
+            dst_dir = val_dir + '/' + file_name
+            tasks_list.append(loop.create_task(async_movefile(source_file, dst_dir)))
+        elif train_ratio + val_ratio < prob <= train_ratio + val_ratio + test_ratio:
+            source_file = train_dir + '/' + file_name
+            dst_dir = test_dir + '/' + file_name
+            tasks_list.append(loop.create_task(async_movefile(source_file, dst_dir)))
+    if len(tasks_list) > 0:
+        loop.run_until_complete(asyncio.wait(tasks_list))
+
+
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level='INFO'
@@ -50,7 +90,11 @@ log = logging.getLogger(__name__)
 @click.command()
 @click.option('--source-dir', type=str, help='Directory with data')
 @click.option('--dst-dir', type=str, help='Destination directory for data')
-def main(source_dir, dst_dir):
+@click.option('--train-ratio', type=float, help='Train set ratio', default=0.75)
+@click.option('--val-ratio', type=float, help='Validation set ratio', default=0.15)
+@click.option('--test-ratio', type=float, help='Test set ratio', default=0.1)
+@click.option('--use-stratification', type=bool, help='Bool flag stratification usage', default=False)
+def main(source_dir, dst_dir, train_ratio, val_ratio, test_ratio, use_stratification):
 
     log.info('Start')
 
@@ -58,9 +102,10 @@ def main(source_dir, dst_dir):
         log.warning('Directory doesn\'t exists')
         os.mkdir(dst_dir)
         log.warning('Directory created')
+
     if len(os.listdir(dst_dir)) == 0:
-        log.info('Asynchronous copying process start')
         process_start = time.time()
+        log.info('Asynchronous copying process start')
         files_copy(source_dir, dst_dir)
         process_end = time.time()
         pics_in_source = sum(map(lambda directory: len(directory[2]), os.walk(source_dir)))
@@ -71,6 +116,32 @@ def main(source_dir, dst_dir):
         pics_in_source = sum(map(lambda directory: len(directory[2]), os.walk(source_dir)))
         pics_in_dst = len(os.listdir(dst_dir))
         log.info(f'Copied {pics_in_dst}/{pics_in_source}: {100.0 * pics_in_dst / pics_in_source}%')
+
+    if train_ratio + val_ratio + test_ratio != 1.0:
+        log.error('Wrong ratio sum')
+        log.warning('Default ratios will be used')
+        train_ratio = 0.75
+        val_ratio = 0.15
+        test_ratio = 0.1
+
+    log.info('Creating directories for validation and test sets')
+    val_dir = '/'.join(dst_dir.split('/')[:-1]) + '/' + 'val_set'
+    test_dir = '/'.join(dst_dir.split('/')[:-1]) + '/' + 'test_set'
+    os.mkdir(val_dir)
+    os.mkdir(test_dir)
+
+    if use_stratification:
+        log.error('WIP')
+    else:
+        log.info(f'Train/Validation/Test split with ratios {train_ratio}/{val_ratio}/{test_ratio} started')
+        split_start = time.time()
+        train_val_test_split(train_dir=dst_dir, val_dir=val_dir, test_dir=test_dir,
+                             train_ratio=train_ratio, val_ratio=val_ratio, test_ratio=test_ratio)
+        split_end = time.time()
+        log.info(f'Split end {round(split_start - split_end, 2)}s')
+        log.info(f'Train set size: {len(os.listdir(dst_dir))}')
+        log.info(f'Validation set size: {len(os.listdir(val_dir))}')
+        log.info(f'Test set size: {len(os.listdir(test_dir))}')
 
 
 if __name__ == '__main__':
