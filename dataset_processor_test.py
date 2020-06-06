@@ -79,6 +79,6 @@ def test_stratification_split():
             (round(train_set[class_name] / total, 2) - train_ratio) ** 2 + \
             (round(val_set[class_name] / total, 2) - val_ratio) ** 2 + \
             (round(test_set[class_name] / total, 2) - test_ratio) ** 2
-        )
+        ) / 3
 
-        assert split_error <= 0.1
+        assert split_error <= 0.01
