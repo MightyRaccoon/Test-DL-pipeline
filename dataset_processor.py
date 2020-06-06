@@ -1,9 +1,13 @@
+"""
+Prepare dataset for DL pipeline
+"""
 import logging
 import time
 import os
 import shutil
 import asyncio
 from typing import NoReturn
+from collections import defaultdict
 
 import click
 import numpy as np
@@ -53,7 +57,7 @@ def train_val_test_split(train_dir: str, val_dir: str, test_dir: str,
                          train_ratio: float, val_ratio: float, test_ratio: float) -> NoReturn:
     """
     Split dataset on 3 parts: train set, validation set and test set.
-    Validation and test sets move to its own directories asynchronous
+    Validation and test sets move to its own directories asynchronous.
     :param train_dir:
     :param val_dir:
     :param test_dir:
@@ -62,11 +66,11 @@ def train_val_test_split(train_dir: str, val_dir: str, test_dir: str,
     :param test_ratio:
     :return:
     """
-    directory_structure = os.listdir(train_dir)
+    files = os.listdir(train_dir)
     tasks_list = []
-    prob_array = np.random.uniform(size=len(directory_structure))
+    prob_array = np.random.uniform(size=len(files))
     loop = asyncio.get_event_loop()
-    for file_name, prob in zip(directory_structure, prob_array):
+    for file_name, prob in zip(files, prob_array):
         if train_ratio < prob <= train_ratio + val_ratio:
             source_file = train_dir + '/' + file_name
             dst_dir = val_dir + '/' + file_name
@@ -75,6 +79,40 @@ def train_val_test_split(train_dir: str, val_dir: str, test_dir: str,
             source_file = train_dir + '/' + file_name
             dst_dir = test_dir + '/' + file_name
             tasks_list.append(loop.create_task(async_movefile(source_file, dst_dir)))
+    if len(tasks_list) > 0:
+        loop.run_until_complete(asyncio.wait(tasks_list))
+
+
+def train_val_test_split_stratified(train_dir: str, val_dir: str, test_dir: str,
+                                    train_ratio: float, val_ratio: float, test_ratio: float) -> NoReturn:
+    """
+    Split dataset on 3 parts: train set, validation set and test set with stratification.
+    Validation and test sets move to its own directories asynchronous.
+    :param train_dir:
+    :param val_dir:
+    :param test_dir:
+    :param train_ratio:
+    :param val_ratio:
+    :param test_ratio:
+    :return:
+    """
+    files = os.listdir(train_dir)
+    tasks_list = []
+    loop = asyncio.get_event_loop()
+    class_objects = defaultdict(list)
+    for file_name in files:
+        class_objects[file_name.split('-')[0]].append(file_name)
+    for files in class_objects.values():
+        prob_array = np.random.uniform(size=len(files))
+        for file_name, prob in zip(files, prob_array):
+            if train_ratio < prob <= train_ratio + val_ratio:
+                source_file = train_dir + '/' + file_name
+                dst_dir = val_dir + '/' + file_name
+                tasks_list.append(loop.create_task(async_movefile(source_file, dst_dir)))
+            elif train_ratio + val_ratio < prob <= train_ratio + val_ratio + test_ratio:
+                source_file = train_dir + '/' + file_name
+                dst_dir = test_dir + '/' + file_name
+                tasks_list.append(loop.create_task(async_movefile(source_file, dst_dir)))
     if len(tasks_list) > 0:
         loop.run_until_complete(asyncio.wait(tasks_list))
 
@@ -131,14 +169,22 @@ def main(source_dir, dst_dir, train_ratio, val_ratio, test_ratio, use_stratifica
     os.mkdir(test_dir)
 
     if use_stratification:
-        log.error('WIP')
+        log.info(f'Stratified Train/Validation/Test split with ratios {train_ratio}/{val_ratio}/{test_ratio} started')
+        split_start = time.time()
+        train_val_test_split_stratified(train_dir=dst_dir, val_dir=val_dir, test_dir=test_dir,
+                                        train_ratio=train_ratio, val_ratio=val_ratio, test_ratio=test_ratio)
+        split_end = time.time()
+        log.info(f'Split end {round(split_end - split_start, 2)}s')
+        log.info(f'Train set size: {len(os.listdir(dst_dir))}')
+        log.info(f'Validation set size: {len(os.listdir(val_dir))}')
+        log.info(f'Test set size: {len(os.listdir(test_dir))}')
     else:
         log.info(f'Train/Validation/Test split with ratios {train_ratio}/{val_ratio}/{test_ratio} started')
         split_start = time.time()
         train_val_test_split(train_dir=dst_dir, val_dir=val_dir, test_dir=test_dir,
                              train_ratio=train_ratio, val_ratio=val_ratio, test_ratio=test_ratio)
         split_end = time.time()
-        log.info(f'Split end {round(split_start - split_end, 2)}s')
+        log.info(f'Split end {round(split_end - split_start, 2)}s')
         log.info(f'Train set size: {len(os.listdir(dst_dir))}')
         log.info(f'Validation set size: {len(os.listdir(val_dir))}')
         log.info(f'Test set size: {len(os.listdir(test_dir))}')
