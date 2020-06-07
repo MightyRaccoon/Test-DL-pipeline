@@ -14,11 +14,11 @@ def test_file():
     source_dir_files_count = sum(map(lambda directory: len(directory[2]), os.walk(source_dir)))
 
     if os.path.exists(val_dir) and os.path.exists(test_dir):
-        copied_files_count = sum(map(lambda directory: len(directory[2]), os.listdir(train_dir))) + \
-                             sum(map(lambda directory: len(directory[2]), os.listdir(val_dir))) + \
-                             sum(map(lambda directory: len(directory[2]), os.listdir(test_dir)))
+        copied_files_count = sum(map(lambda directory: len(directory[2]), os.walk(train_dir))) + \
+                             sum(map(lambda directory: len(directory[2]), os.walk(val_dir))) + \
+                             sum(map(lambda directory: len(directory[2]), os.walk(test_dir)))
     else:
-        copied_files_count = sum(map(lambda directory: len(directory[2]), os.listdir(train_dir)))
+        copied_files_count = sum(map(lambda directory: len(directory[2]), os.walk(train_dir)))
 
     assert copied_files_count == source_dir_files_count
 
@@ -32,9 +32,9 @@ def test_split():
     val_dir = '/home/mightyracoon/datasets/place_365/val_set'
     test_dir = '/home/mightyracoon/datasets/place_365/test_set'
 
-    train_size = len(os.listdir(train_dir))
-    val_size = len(os.listdir(val_dir))
-    test_size = len(os.listdir(test_dir))
+    train_size = sum(map(lambda directory: len(directory[2]), os.walk(train_dir)))
+    val_size = sum(map(lambda directory: len(directory[2]), os.walk(val_dir)))
+    test_size = sum(map(lambda directory: len(directory[2]), os.walk(test_dir)))
 
     total = train_size + val_size + test_size
 
@@ -57,20 +57,17 @@ def test_stratification_split():
     val_set = defaultdict(int)
     test_set = defaultdict(int)
 
-    for file_name in os.listdir(train_dir):
-        class_name = file_name.split('-')[0]
+    for class_name in os.listdir(train_dir):
         classes.add(class_name)
-        train_set[class_name] += 1
+        train_set[class_name] += len(os.listdir('/'.join((train_dir, class_name))))
 
-    for file_name in os.listdir(val_dir):
-        class_name = file_name.split('-')[0]
+    for class_name in os.listdir(val_dir):
         classes.add(class_name)
-        val_set[class_name] += 1
+        val_set[class_name] += len(os.listdir('/'.join((val_dir, class_name))))
 
-    for file_name in os.listdir(test_dir):
-        class_name = file_name.split('-')[0]
+    for class_name in os.listdir(test_dir):
         classes.add(class_name)
-        test_set[class_name] += 1
+        test_set[class_name] += len(os.listdir('/'.join((test_dir, class_name))))
 
     for class_name in classes:
         total = train_set[class_name] + val_set[class_name] + test_set[class_name]
